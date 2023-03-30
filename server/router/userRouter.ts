@@ -3,7 +3,7 @@ import express from "express"
 const router = express.Router()
 // import {generateToken} from "../utils/geneateToken"
 
-import { createUser, loginIn, getUsers, getOne,createPay,viewAdminPay,viewUserPay,chexkOutPayCard } from "../controller/userController"
+import { createUser, loginIn, getUsers, getOne,createPay,viewAdminPay,viewUserPay,checkInPayCard } from "../controller/userController"
 
 router.route("/").post(createUser)
 router.route("/login").post(loginIn)
@@ -14,6 +14,6 @@ router.route("/view/admin").get(viewAdminPay);
 
 router.route("/view-user/:id").get(viewUserPay);
 
-router.route("/pay").post(chexkOutPayCard);
+router.route("/pay/:id").post(checkInPayCard);
 
 export default router

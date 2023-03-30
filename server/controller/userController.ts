@@ -1,6 +1,7 @@
-import { Request, Response } from "express"
+import { json, Request, Response } from "express"
 import axios from "axios"
 import mongoose from "mongoose"
+import { uuid } from "uuidv4";
 import userModel from "../model/userModel"
 import productModel from "../model/productModel"
 import { generateToken } from "../utils/geneateToken"
@@ -114,7 +115,7 @@ export const getOne = asyncHandler(async(req:Request, res:Response) => {
         const getOneUser = await userModel.findById(req.params.id)
 
         res.status(HTTP.OK).json({
-            message: "user not found",
+            message: "user found",
             data:getOneUser
         })
         
@@ -214,27 +215,27 @@ export const viewUserPay = asyncHandler(async (req: Request, res: Response) => {
   }
 });
 
-export const chexkOutPayCard = asyncHandler(async (req: Request, res: Response) => { 
+export const checkInPayCard = asyncHandler(async (req: Request, res: Response) => { 
 
     try
     {
-        const { name, email, password } = req.body
-
+        const { amount, dec , title} = req.body
+        const userpay = await userModel.findById(req.params.id)
         const secket = `sk_test_3AkN3azN8jGnNXMGnFi56PjFWmbq92yfLSrjQ5SN`
         
         const data = {
-    "amount": "1000",
+    "amount": `${amount}`,
     "redirect_url": "https://korapay.com",
     "currency": "NGN",
-    "reference": "fix-test-webhook-045",
+    "reference": `${uuid()}`,
     "narration": "Fix Test Webhook",
     "channels": [
         "card"
     ],
     "default_channel": "card",
     "customer": {
-        "name": "Jycdmbhw Name",
-        "email": "jycdmbhw@sharklasers.com"
+        "name": `${userpay?.name}`,
+        "email": `${userpay?.email}`
     },
     "notification_url": "https://webhook.site/8d321d8d-397f-4bab-bf4d-7e9ae3afbd50",
     "metadata":{
@@ -257,8 +258,35 @@ export const chexkOutPayCard = asyncHandler(async (req: Request, res: Response) 
         };
 
         await axios(config)
-        .then(function (response) {
-        console.log(JSON.stringify(response.data));
+        .then(async function (response) {
+            console.log(JSON.stringify(response.data));
+            
+            //  const { title, amount, dec } = req.body
+        const getUser = await userModel.findById(req.params.id)
+
+        const createPay:any = await productModel.create({
+            amount,
+            title,
+            dec,
+            usersName:getUser?.name,
+
+        })
+
+        createPay.users = getUser
+        createPay?.save()
+
+        getUser?.product?.push(new mongoose.Types.ObjectId(createPay._id))
+        getUser!.save()
+
+        return res.status(HTTP.OK).json({
+            message: "payment created successfully",
+            data: {
+                paymentInfo: createPay,
+                dataPayment:JSON.parse(JSON.stringify(response.data))
+            }
+        })
+
+         
         })
         .catch(function (error) {
         console.log(error);
