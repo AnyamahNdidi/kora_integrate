@@ -1,12 +1,14 @@
 import { json, Request, Response } from "express"
 import axios from "axios"
 import mongoose from "mongoose"
+import  crypto  from "crypto"
 import { uuid } from "uuidv4";
 import userModel from "../model/userModel"
 import productModel from "../model/productModel"
 import { generateToken } from "../utils/geneateToken"
 import { asyncHandler } from "../asynsHandler"
-import {mainAppError, HTTP } from "../../server/error/errorDefinder"
+import { mainAppError, HTTP } from "../../server/error/errorDefinder"
+
 
 export const createUser = asyncHandler(async (req: Request, res: Response) => {
     
@@ -215,13 +217,19 @@ export const viewUserPay = asyncHandler(async (req: Request, res: Response) => {
   }
 });
 
+const secret = `sk_test_3AkN3azN8jGnNXMGnFi56PjFWmbq92yfLSrjQ5SN`
+const dataUrl = "https://api.korapay.com/merchant/api/v1/charges/card"
+const encrypt = "FVY2BQfJLqgroGkoKaFQ3orLgGQEDPow"
+
+
+
 export const checkInPayCard = asyncHandler(async (req: Request, res: Response) => { 
 
     try
     {
         const { amount, dec , title} = req.body
         const userpay = await userModel.findById(req.params.id)
-        const secket = `sk_test_3AkN3azN8jGnNXMGnFi56PjFWmbq92yfLSrjQ5SN`
+        
         
         const data = {
     "amount": `${amount}`,
@@ -252,7 +260,7 @@ export const checkInPayCard = asyncHandler(async (req: Request, res: Response) =
         maxBodyLength: Infinity,
         url: 'https://api.korapay.com/merchant/api/v1/charges/initialize',
         headers: { 
-            Authorization:`Bearer ${secket}`
+            Authorization:`Bearer ${secret}`
         },
         data : data
         };
@@ -297,6 +305,190 @@ export const checkInPayCard = asyncHandler(async (req: Request, res: Response) =
         new mainAppError({
             name: "Error created",
             message: "payment not intialized",
+            status: HTTP.BAD_REQUEST,
+            isSuccess:false
+        })
+    }
+})
+
+//function to encrypt the data
+
+
+function encryptAES256(encryptionKey:any, paymentData:any) {  
+  const iv = crypto.randomBytes(16);
+
+  const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey, iv);
+  const encrypted = cipher.update(paymentData);
+
+  const ivToHex = iv.toString('hex');
+  const encryptedToHex = Buffer.concat([encrypted, cipher.final()]).toString('hex');
+  
+  return `${ivToHex}:${encryptedToHex}:${cipher.getAuthTag().toString('hex')}`;
+}
+
+//this function allow you to desing your own front end model card for payment
+//pay in
+
+export const checkInPayment = asyncHandler(async (req: Request, res: Response) => {
+    
+    try
+    {
+
+        //     name: "Test Cards",
+    // number: "5188513618552975",
+    // cvv: "123",
+    // expiry_month: "09",
+    // expiry_year: "30",
+    // pin: "1234", // optional
+        const {
+            amount,
+            name,
+            number,
+            cvv,
+            pin,
+            expiry_month,
+            expiry_year,
+            title,
+            dec
+
+        } = req.body;
+       
+       
+        const paymentData = {
+    "reference": uuid(), // must be at least 8 characters
+    "card": {
+    
+    name: name,
+    number: number,
+    cvv: cvv,
+    expiry_month: expiry_month,
+    expiry_year: expiry_year,
+    pin: pin, // optional
+    },
+    "amount": amount,
+    "currency": "NGN",
+    "redirect_url": "https://merchant-redirect-url.com",
+    "customer": {
+        "name": "John Doe",
+        "email": "johndoe@korapay.com"
+    },
+    "metadata": {
+       "internalRef": "JD-12-67",
+       "age": 15,
+       "fixed": true,
+    }
+        }
+
+        const StringData = JSON.stringify(paymentData)
+        const buffData = Buffer.from(StringData, "utf-8")
+        const encryptedData = encryptAES256(encrypt,  buffData)
+        
+                var config = {
+        method: 'post',
+        maxBodyLength: Infinity,
+        url: dataUrl,
+                    headers: {
+            Authorization:`Bearer ${secret}`
+         },
+                    data: {
+            charge_data: `${encryptedData}`,
+        }
+        };
+
+        await  axios(config)
+        .then(async function (response) {
+        // console.log(JSON.stringify(response.data));
+            
+          const getUser = await userModel.findById(req.params.id)
+
+        const createPay:any = await productModel.create({
+            amount,
+            title,
+            dec,
+            usersName:getUser?.name,
+
+        })
+
+        createPay.users = getUser
+        createPay?.save()
+
+        getUser?.product?.push(new mongoose.Types.ObjectId(createPay._id))
+        getUser!.save()
+
+        return res.status(HTTP.OK).json({
+            message: "payment created successfully",
+            data: {
+                paymentInfo: createPay,
+                dataPayment:JSON.parse(JSON.stringify(response.data))
+            }
+        })
+
+ 
+        })
+        .catch(function (error) {
+        console.log(error);
+        });
+                
+    }catch(error){
+
+         new mainAppError({
+            name: "Error created",
+            message: "payout cannot be created",
+            status: HTTP.BAD_REQUEST,
+            isSuccess:false
+        })
+    }
+    
+})
+
+export const checkOutToBank = asyncHandler(async (req:Request, res:Response) => {
+    try
+    {
+                    var data = JSON.stringify({
+            reference:  uuid(),
+            destination: {
+                type: "bank_account",
+                amount: "100000",
+                currency: "NGN",
+                narration: "Test Transfer Payment",
+                bank_account: {
+                bank: "033",
+                account: "0000000000"
+                },
+                customer: {
+                name: "John Doe",
+                email: "johndoe@korapay.com"
+                }
+            }
+            });
+
+            var config = {
+            method: 'post',
+            maxBodyLength: Infinity,
+            url: 'https://api.korapay.com/merchant/api/v1/transactions/disburse',
+                headers: { 
+                "Content-Type": "application/json",
+                 Authorization:`Bearer ${secret}`
+            },
+            data : data,
+            };
+
+            axios(config)
+            .then(function (response) {
+            return res.status(201).json({
+          message: "success",
+          data: JSON.parse(JSON.stringify(response.data)),
+        });
+            })
+            .catch(function (error) {
+            console.log(error);
+            });
+        
+    } catch (error)
+    {
+         new mainAppError({
+            name: "Error created",
+            message: "ERROR IN CHECKOUT",
             status: HTTP.BAD_REQUEST,
             isSuccess:false
         })
